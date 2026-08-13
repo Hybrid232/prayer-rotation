@@ -24,32 +24,46 @@ rotation, with a one-click way to swap someone out when they can't make it.
 - **Export / Import** — download the current schedule as a `.json` file,
   or load one back in.
 
-## About data storage (read this)
+## About data storage / Team Sync (read this)
 
-This app has **no server or database** — it's plain HTML/CSS/JS, which is
-what makes it possible to host for free on GitHub Pages. Because of that,
-**all changes (participants, swaps, settings) are saved only in the
-browser that made them** (via `localStorage`). Two people opening the same
-GitHub Pages link on their own computers will each see their own local
-copy, not each other's edits.
+This app still has **no traditional server or database** — it's plain
+HTML/CSS/JS hosted for free on GitHub Pages. Instead, this repo's own
+`data.json` acts as the shared "database":
 
-For a small team, the simplest way to use this today is to have **one
-person be the "admin"** who makes changes, and everyone else just glances
-at the page for reference — or the admin periodically posts a screenshot
-or the exported JSON in a group chat.
+- **Viewing is always live, for everyone, no setup required.** Every time
+  the page is opened, it reads the latest `data.json` straight from this
+  repo via the GitHub API. Whoever last saved a change, everyone else sees
+  it on their next page load (or by clicking "Refresh from team").
+- **Editing requires a sync token**, because GitHub only allows the shared
+  file to be written by someone authenticated. Ask your admin for the team
+  sync token and paste it into the **Team Sync** box in the sidebar once —
+  it's remembered on that device from then on. Any change you make
+  (add/remove a person, swap, settings) is committed back to `data.json`
+  a couple seconds after you stop editing.
+- Without a token, you can still see everything live — you just can't push
+  changes back (they'd only be saved in that browser's local cache).
+- This is **last-write-wins**, not true real-time collaboration: if two
+  people save within the same couple of seconds, the second save quietly
+  overwrites the first. Fine for occasional edits from a small team; not
+  meant for simultaneous heavy editing.
 
-If down the road you want real shared/live sync between everyone's
-devices, the natural upgrades are:
+### Creating the team sync token (do this once, as the admin)
 
-1. **GitHub-as-a-database**: the admin's browser commits the updated
-   `data.json` straight to this repo via the GitHub API (using a personal
-   access token entered once), and everyone's page just reads the latest
-   `data.json` on load. No server needed, but does require a bit more code.
-2. **A free real-time backend** like Firebase/Supabase, so every device
-   reads/writes the same shared data instantly.
+1. Go to
+   [github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new)
+   (a **fine-grained** token, scoped tightly).
+2. Under **Repository access**, choose "Only select repositories" and pick
+   this repo (`prayer-rotation`).
+3. Under **Permissions → Repository permissions**, set **Contents** to
+   **Read and write**. Leave everything else as "No access."
+4. Generate the token and copy it (it's only shown once).
+5. Share it with your team the same way you'd share the page link (chat,
+   email, etc.) — treat it like a shared password. Each person pastes it
+   into the **Team Sync** box in the app once per device/browser.
 
-Both are straightforward to add later without throwing away anything
-here — just ask and it can be built in.
+If the token ever leaks or someone leaves the team, delete it from
+[github.com/settings/tokens](https://github.com/settings/tokens) and
+generate a new one to hand out.
 
 ## Deploying to GitHub Pages
 

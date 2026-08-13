@@ -5,10 +5,24 @@
   const HISTORY_KEEP_DAYS = 28; // how much past history to retain in storage
   const HISTORY_SHOW = 4; // how many recent past meetings to display
 
+  // Shared team state lives in this repo's data.json. Anyone opening the
+  // page reads it (no auth needed, public repo). Writing it back requires a
+  // GitHub token with contents write access to this repo, pasted once per
+  // device — see the "Team Sync" panel.
+  const GITHUB_SYNC = { owner: "Hybrid232", repo: "prayer-rotation", branch: "main", path: "data.json" };
+  const SYNC_TOKEN_KEY = "prayerRotation.syncToken.v1";
+  const SYNC_DEBOUNCE_MS = 1500;
+
   let state = null;
   let swapSelection = null; // { weekId, slot } while picking a swap target
   let lastSwap = null; // for one-step undo
   let toastTimer = null;
+
+  let githubFileSha = null; // sha of the data.json blob we last read/wrote, required by GitHub to write
+  let lastSyncedJson = null; // canonical JSON string that matches what's on GitHub, so we don't push no-op commits
+  let githubReachable = false; // whether the last attempt to read from GitHub succeeded
+  let syncStatus = "offline"; // offline | viewing | synced | pending | syncing | error
+  let syncDebounceTimer = null;
 
   // ---------------------------------------------------------------------
   // Date helpers
@@ -46,21 +60,208 @@
   // ---------------------------------------------------------------------
   // Persistence
   // ---------------------------------------------------------------------
-  async function loadState() {
+  function saveLocalOnly() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+  // Save locally and (if a sync token is set) push to the team's shared copy.
+  function saveState() {
+    saveLocalOnly();
+    scheduleSync();
+  }
+
+  async function loadSeedState() {
+    const resp = await fetch("data.json");
+    return await resp.json();
+  }
+
+  // On startup, always prefer the team's shared copy on GitHub so everyone
+  // opens the page to the same schedule. Fall back to whatever's cached in
+  // this browser, then to the bundled seed, if GitHub can't be reached.
+  async function loadInitialState() {
+    try {
+      const shared = await fetchSharedState();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(shared));
+      setSyncStatus(getSyncToken() ? "synced" : "viewing");
+      return shared;
+    } catch (err) {
+      console.warn("Couldn't reach the shared schedule on GitHub, falling back to a local copy.", err);
+      githubReachable = false;
+    }
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       try {
+        setSyncStatus("offline");
         return JSON.parse(raw);
       } catch (e) {
         console.warn("Saved data was corrupt, falling back to default seed.", e);
       }
     }
-    const resp = await fetch("data.json");
-    const seed = await resp.json();
-    return seed;
+    setSyncStatus("offline");
+    return loadSeedState();
   }
-  function saveState() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+
+  // Re-pull the team's latest shared schedule (used on manual refresh, and
+  // right after connecting a sync token).
+  async function refreshFromShared(manual) {
+    try {
+      const shared = await fetchSharedState();
+      state = shared;
+      state.changelog = state.changelog || [];
+      state.bag = state.bag || { opening: [], closing: [], lastOpening: null, lastClosing: null };
+      swapSelection = null;
+      ensureSchedule();
+      saveState();
+      renderAll();
+      if (manual) showToast("Refreshed from the team's latest schedule.");
+    } catch (err) {
+      console.warn("Refresh from GitHub failed.", err);
+      githubReachable = false;
+      setSyncStatus(getSyncToken() ? "error" : "offline");
+      if (manual) showToast("Couldn't reach GitHub to refresh.");
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // GitHub sync (shared data.json acts as the team's database)
+  // ---------------------------------------------------------------------
+  function getSyncToken() {
+    return localStorage.getItem(SYNC_TOKEN_KEY) || "";
+  }
+  function setSyncToken(token) {
+    if (token) localStorage.setItem(SYNC_TOKEN_KEY, token);
+    else localStorage.removeItem(SYNC_TOKEN_KEY);
+  }
+
+  function utf8ToBase64(str) {
+    const bytes = new TextEncoder().encode(str);
+    let binary = "";
+    bytes.forEach((b) => { binary += String.fromCharCode(b); });
+    return btoa(binary);
+  }
+  function base64ToUtf8(b64) {
+    const binary = atob(b64.replace(/\n/g, ""));
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  }
+
+  function githubContentsUrl() {
+    return `https://api.github.com/repos/${GITHUB_SYNC.owner}/${GITHUB_SYNC.repo}/contents/${GITHUB_SYNC.path}`;
+  }
+
+  async function fetchSharedState() {
+    const token = getSyncToken();
+    const headers = { Accept: "application/vnd.github+json" };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const resp = await fetch(`${githubContentsUrl()}?ref=${GITHUB_SYNC.branch}`, { headers, cache: "no-store" });
+    if (!resp.ok) throw new Error(`GitHub read failed (${resp.status})`);
+    const data = await resp.json();
+    const parsed = JSON.parse(base64ToUtf8(data.content));
+    githubFileSha = data.sha;
+    lastSyncedJson = JSON.stringify(parsed, null, 2);
+    githubReachable = true;
+    return parsed;
+  }
+
+  async function ensureShaKnown() {
+    if (githubFileSha) return;
+    const token = getSyncToken();
+    const headers = { Accept: "application/vnd.github+json" };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const resp = await fetch(`${githubContentsUrl()}?ref=${GITHUB_SYNC.branch}`, { headers, cache: "no-store" });
+    if (resp.ok) {
+      const data = await resp.json();
+      githubFileSha = data.sha;
+    }
+  }
+
+  async function pushSharedState(json) {
+    const token = getSyncToken();
+    if (!token) throw new Error("no-token");
+    await ensureShaKnown();
+    const body = {
+      message: "Update prayer rotation schedule",
+      content: utf8ToBase64(json),
+      branch: GITHUB_SYNC.branch,
+    };
+    if (githubFileSha) body.sha = githubFileSha;
+    const resp = await fetch(githubContentsUrl(), {
+      method: "PUT",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (resp.status === 409) throw new Error("conflict");
+    if (!resp.ok) {
+      const errBody = await resp.json().catch(() => ({}));
+      throw new Error(errBody.message || `GitHub write failed (${resp.status})`);
+    }
+    const data = await resp.json();
+    githubFileSha = data.content.sha;
+    githubReachable = true;
+  }
+
+  // Debounced so rapid edits (typing a name, several swaps) collapse into
+  // one commit instead of one per keystroke.
+  function scheduleSync() {
+    if (!getSyncToken()) {
+      setSyncStatus(githubReachable ? "viewing" : "offline");
+      return;
+    }
+    const json = JSON.stringify(state, null, 2);
+    if (json === lastSyncedJson) {
+      setSyncStatus("synced");
+      return;
+    }
+    clearTimeout(syncDebounceTimer);
+    setSyncStatus("pending");
+    syncDebounceTimer = setTimeout(() => doSync(json), SYNC_DEBOUNCE_MS);
+  }
+
+  async function doSync(json, attempt) {
+    attempt = attempt || 0;
+    setSyncStatus("syncing");
+    try {
+      await pushSharedState(json);
+      lastSyncedJson = json;
+      setSyncStatus("synced");
+    } catch (err) {
+      if (err.message === "conflict" && attempt < 1) {
+        // Someone else committed since we last read the sha - refetch it and retry once.
+        githubFileSha = null;
+        await ensureShaKnown();
+        return doSync(json, attempt + 1);
+      }
+      console.warn("Sync to GitHub failed.", err);
+      setSyncStatus("error");
+    }
+  }
+
+  const SYNC_STATUS_TEXT = {
+    offline: "⚠ Couldn't reach the team schedule — showing a local copy.",
+    viewing: "● Viewing the team's live schedule.",
+    synced: "✓ Synced with the team.",
+    pending: "Change pending sync…",
+    syncing: "Syncing…",
+    error: "⚠ Sync failed — your change is saved locally only.",
+  };
+  function setSyncStatus(status) {
+    syncStatus = status;
+    renderSyncStatus();
+  }
+  function renderSyncStatus() {
+    const el = document.getElementById("sync-status");
+    if (!el) return;
+    el.textContent = SYNC_STATUS_TEXT[syncStatus] || "";
+    el.className = "sync-status " + syncStatus;
+  }
+  function renderSyncPanel() {
+    const hasToken = !!getSyncToken();
+    document.getElementById("sync-token-form").classList.toggle("hidden", hasToken);
+    document.getElementById("sync-token-clear-btn").classList.toggle("hidden", !hasToken);
+    renderSyncStatus();
   }
 
   // ---------------------------------------------------------------------
@@ -546,6 +747,7 @@
     renderChangelog();
     renderSettings();
     renderSwapBanner();
+    renderSyncPanel();
   }
 
   // ---------------------------------------------------------------------
@@ -708,18 +910,46 @@
     });
 
     document.getElementById("reset-btn").addEventListener("click", async () => {
+      const connected = !!getSyncToken();
+      const extra = connected
+        ? " This only resets what's shown on this device — it won't touch the shared team schedule, and your next refresh will pull the team's version back."
+        : "";
       const confirmed = await showConfirm(
-        "Reset everything to the default starting schedule? This clears participants, swaps and history saved in this browser.",
+        `Reset everything to the default starting schedule?${extra} This clears participants, swaps and history saved in this browser.`,
         { confirmLabel: "Reset" }
       );
       if (!confirmed) return;
       localStorage.removeItem(STORAGE_KEY);
-      state = await loadState();
+      state = await loadSeedState();
       swapSelection = null;
       lastSwap = null;
       ensureSchedule();
-      saveState();
+      saveLocalOnly();
       renderAll();
+    });
+
+    document.getElementById("sync-token-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = document.getElementById("sync-token-input");
+      const val = input.value.trim();
+      if (!val) return;
+      setSyncToken(val);
+      input.value = "";
+      renderSyncPanel();
+      showToast("Sync token saved on this device.");
+      await refreshFromShared(true);
+    });
+
+    document.getElementById("sync-token-clear-btn").addEventListener("click", () => {
+      setSyncToken("");
+      lastSyncedJson = null;
+      setSyncStatus(githubReachable ? "viewing" : "offline");
+      renderSyncPanel();
+      showToast("Disconnected. Changes will only save locally on this device.");
+    });
+
+    document.getElementById("sync-refresh-btn").addEventListener("click", async () => {
+      await refreshFromShared(true);
     });
 
     document.addEventListener("keydown", (e) => {
@@ -739,7 +969,7 @@
   // Init
   // ---------------------------------------------------------------------
   async function init() {
-    state = await loadState();
+    state = await loadInitialState();
     state.changelog = state.changelog || [];
     state.bag = state.bag || { opening: [], closing: [], lastOpening: null, lastClosing: null };
     ensureSchedule();

@@ -71,7 +71,18 @@
         </label>
         <button id="reset-btn" type="button" class="danger-link">Reset to default schedule</button>
       </div>
-      <p class="local-note">Schedule data is saved in this browser only. Use Export/Import to move it to another device or share a snapshot with your team.</p>
+
+      <h2 class="settings-heading">Team Sync</h2>
+      <p id="sync-status" class="sync-status"></p>
+      <form id="sync-token-form" class="sync-token-row">
+        <input type="password" id="sync-token-input" placeholder="Paste team sync token…" autocomplete="off" />
+        <button type="submit" class="secondary">Connect</button>
+      </form>
+      <div class="sync-actions">
+        <button id="sync-refresh-btn" type="button" class="secondary">Refresh from team</button>
+        <button id="sync-token-clear-btn" type="button" class="danger-link hidden">Disconnect this device</button>
+      </div>
+      <p class="local-note">This page automatically loads the team's latest saved schedule when opened. To make changes that everyone else sees too, paste the team sync token above (ask your admin for it) — it's remembered on this device.</p>
     </aside>
 
     <section class="panel schedule-panel">

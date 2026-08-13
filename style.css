@@ -235,6 +235,40 @@ button.secondary:hover, label.import-label.secondary:hover { background: #e5e7eb
   color: var(--text-muted);
 }
 
+.sync-status {
+  display: inline-block;
+  font-size: .8rem;
+  font-weight: 600;
+  margin: 4px 0 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #f3f4f6;
+  color: var(--text-muted);
+}
+.sync-status.viewing { background: var(--accent-soft); color: var(--accent); }
+.sync-status.synced { background: #ecfdf5; color: #059669; }
+.sync-status.pending, .sync-status.syncing { background: #fffbeb; color: #92400e; }
+.sync-status.error, .sync-status.offline { background: #fef2f2; color: var(--danger); }
+
+.sync-token-row {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+.sync-token-row input[type="password"] {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: .85rem;
+}
+.sync-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: .92rem; }
 thead th {
