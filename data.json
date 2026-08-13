@@ -101,16 +101,16 @@
       "id": "w_2026-09-24",
       "date": "2026-09-24",
       "opening": "nii",
-      "closing": "tina",
+      "closing": "tony",
       "openingSwapped": false,
-      "closingSwapped": false
+      "closingSwapped": true
     },
     {
       "id": "w_2026-10-01",
       "date": "2026-10-01",
-      "opening": "tony",
+      "opening": "tina",
       "closing": "wayne",
-      "openingSwapped": false,
+      "openingSwapped": true,
       "closingSwapped": false
     },
     {
@@ -134,5 +134,10 @@
     "lastOpening": "malcolm",
     "lastClosing": "jaeden"
   },
-  "changelog": []
+  "changelog": [
+    {
+      "ts": 1786663041863,
+      "text": "Swapped Tony (opening, 10/1/2026) with Tina (closing, 9/24/2026)."
+    }
+  ]
 }
