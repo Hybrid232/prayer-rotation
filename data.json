@@ -51,6 +51,11 @@
       "id": "p_mss4wggy8ag0",
       "name": "Bob",
       "color": "#a100db"
+    },
+    {
+      "id": "p_mss4y17ryk7r",
+      "name": "Billy Jean",
+      "color": "#2563eb"
     }
   ],
   "weeks": [
@@ -129,9 +134,11 @@
   ],
   "bag": {
     "opening": [
-      "p_mss4wggy8ag0"
+      "p_mss4wggy8ag0",
+      "p_mss4y17ryk7r"
     ],
     "closing": [
+      "p_mss4y17ryk7r",
       "p_mss4wggy8ag0"
     ],
     "lastOpening": "malcolm",
