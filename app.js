@@ -167,16 +167,22 @@
     state.weeks.sort((a, b) => (a.date < b.date ? -1 : 1));
   }
 
-  // Redraw any upcoming, non-swapped slot whose assigned person was removed.
-  function regenerateForRemovedParticipants() {
+  // Redraw any upcoming, non-swapped slot whose assigned person was removed,
+  // and fill in any slot that's sitting "Unassigned" (e.g. because the
+  // roster was briefly empty) now that participants exist again. Called
+  // after any participant add/remove/import so the schedule never gets
+  // stuck with a gap a new person can't be dropped into.
+  function refreshUpcomingAssignments() {
     const today = todayMidnight();
     const ids = activeParticipantIds();
     state.weeks.forEach((w) => {
       if (parseISO(w.date) < today) return;
-      if (w.opening && !ids.includes(w.opening) && !w.openingSwapped) {
+      const openingInvalid = !w.opening || !ids.includes(w.opening);
+      if (openingInvalid && !w.openingSwapped) {
         w.opening = drawFromBag("opening", w.closing);
       }
-      if (w.closing && !ids.includes(w.closing) && !w.closingSwapped) {
+      const closingInvalid = !w.closing || !ids.includes(w.closing);
+      if (closingInvalid && !w.closingSwapped) {
         w.closing = drawFromBag("closing", w.opening);
       }
     });
@@ -465,6 +471,74 @@
     toastTimer = setTimeout(() => el.classList.add("hidden"), 6000);
   }
 
+  // Custom-styled replacements for window.confirm()/alert() so dialogs match
+  // the rest of the app instead of looking like a bare browser popup.
+  function showConfirm(message, opts) {
+    opts = opts || {};
+    return new Promise((resolve) => {
+      const overlay = document.getElementById("modal-overlay");
+      const cancelBtn = document.getElementById("modal-cancel-btn");
+      const confirmBtn = document.getElementById("modal-confirm-btn");
+
+      document.getElementById("modal-message").textContent = message;
+      confirmBtn.textContent = opts.confirmLabel || "Confirm";
+      confirmBtn.classList.toggle("danger", opts.danger !== false);
+      cancelBtn.classList.remove("hidden");
+      cancelBtn.textContent = opts.cancelLabel || "Cancel";
+      overlay.classList.remove("hidden");
+
+      function cleanup(result) {
+        overlay.classList.add("hidden");
+        confirmBtn.removeEventListener("click", onConfirm);
+        cancelBtn.removeEventListener("click", onCancel);
+        overlay.removeEventListener("click", onOverlay);
+        document.removeEventListener("keydown", onKey);
+        resolve(result);
+      }
+      function onConfirm() { cleanup(true); }
+      function onCancel() { cleanup(false); }
+      function onOverlay(e) { if (e.target === overlay) cleanup(false); }
+      function onKey(e) {
+        if (e.key === "Escape") cleanup(false);
+        if (e.key === "Enter") cleanup(true);
+      }
+      confirmBtn.addEventListener("click", onConfirm);
+      cancelBtn.addEventListener("click", onCancel);
+      overlay.addEventListener("click", onOverlay);
+      document.addEventListener("keydown", onKey);
+      confirmBtn.focus();
+    });
+  }
+
+  function showAlertModal(message) {
+    return new Promise((resolve) => {
+      const overlay = document.getElementById("modal-overlay");
+      const cancelBtn = document.getElementById("modal-cancel-btn");
+      const confirmBtn = document.getElementById("modal-confirm-btn");
+
+      document.getElementById("modal-message").textContent = message;
+      confirmBtn.textContent = "OK";
+      confirmBtn.classList.remove("danger");
+      cancelBtn.classList.add("hidden");
+      overlay.classList.remove("hidden");
+
+      function cleanup() {
+        overlay.classList.add("hidden");
+        confirmBtn.removeEventListener("click", onOk);
+        overlay.removeEventListener("click", onOverlay);
+        document.removeEventListener("keydown", onKey);
+        resolve();
+      }
+      function onOk() { cleanup(); }
+      function onOverlay(e) { if (e.target === overlay) cleanup(); }
+      function onKey(e) { if (e.key === "Escape" || e.key === "Enter") cleanup(); }
+      confirmBtn.addEventListener("click", onOk);
+      overlay.addEventListener("click", onOverlay);
+      document.addEventListener("keydown", onKey);
+      confirmBtn.focus();
+    });
+  }
+
   function renderAll() {
     renderStats();
     renderParticipants();
@@ -505,15 +579,19 @@
       }
     });
 
-    document.getElementById("participant-list").addEventListener("click", (e) => {
+    document.getElementById("participant-list").addEventListener("click", async (e) => {
       const btn = e.target.closest('[data-action="remove"]');
       if (!btn) return;
       const id = btn.dataset.id;
       const p = participantById(id);
       if (!p) return;
-      if (!confirm(`Remove ${p.name} from the rotation? Any of their upcoming (non-swapped) assignments will be reshuffled to someone else.`)) return;
+      const confirmed = await showConfirm(
+        `Remove ${p.name} from the rotation? Any of their upcoming (non-swapped) assignments will be reshuffled to someone else.`,
+        { confirmLabel: "Remove" }
+      );
+      if (!confirmed) return;
       state.participants = state.participants.filter((x) => x.id !== id);
-      regenerateForRemovedParticipants();
+      refreshUpcomingAssignments();
       saveState();
       renderAll();
     });
@@ -547,14 +625,16 @@
 
       // Give the new person a shot at joining the current bags soon rather
       // than waiting for the bags to fully exhaust first.
-      if (state.bag.opening && state.bag.opening.length > 0) {
-        const idx = Math.floor(Math.random() * (state.bag.opening.length + 1));
-        state.bag.opening.splice(idx, 0, id);
-      }
-      if (state.bag.closing && state.bag.closing.length > 0) {
-        const idx = Math.floor(Math.random() * (state.bag.closing.length + 1));
-        state.bag.closing.splice(idx, 0, id);
-      }
+      if (!state.bag.opening) state.bag.opening = [];
+      if (!state.bag.closing) state.bag.closing = [];
+      const openIdx = Math.floor(Math.random() * (state.bag.opening.length + 1));
+      state.bag.opening.splice(openIdx, 0, id);
+      const closeIdx = Math.floor(Math.random() * (state.bag.closing.length + 1));
+      state.bag.closing.splice(closeIdx, 0, id);
+
+      // Fill in any slot that's currently "Unassigned" (e.g. the roster was
+      // briefly empty) now that there's someone available for it.
+      refreshUpcomingAssignments();
 
       nameInput.value = "";
       colorInput.value = randomColor();
@@ -562,10 +642,14 @@
       renderAll();
     });
 
-    document.getElementById("meeting-weekday").addEventListener("change", (e) => {
+    document.getElementById("meeting-weekday").addEventListener("change", async (e) => {
       const val = Number(e.target.value);
       if (val === state.meetingWeekday) return;
-      if (!confirm("Changing the meeting day will regenerate all upcoming (future) assignments. Past history is kept. Continue?")) {
+      const confirmed = await showConfirm(
+        "Changing the meeting day will regenerate all upcoming (future) assignments. Past history is kept. Continue?",
+        { confirmLabel: "Change day" }
+      );
+      if (!confirmed) {
         renderSettings();
         return;
       }
@@ -601,19 +685,22 @@
       const file = e.target.files[0];
       if (!file) return;
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
         try {
           const imported = JSON.parse(reader.result);
           if (!imported.participants || !imported.weeks) throw new Error("Missing required fields.");
           state = imported;
           swapSelection = null;
           lastSwap = null;
+          state.changelog = state.changelog || [];
+          state.bag = state.bag || { opening: [], closing: [], lastOpening: null, lastClosing: null };
+          refreshUpcomingAssignments();
           ensureSchedule();
           saveState();
           renderAll();
           showToast("Schedule imported.");
         } catch (err) {
-          alert("That file doesn't look like a valid prayer-rotation export.\n" + err.message);
+          await showAlertModal("That file doesn't look like a valid prayer-rotation export.\n" + err.message);
         }
         e.target.value = "";
       };
@@ -621,7 +708,11 @@
     });
 
     document.getElementById("reset-btn").addEventListener("click", async () => {
-      if (!confirm("Reset everything to the default starting schedule? This clears participants, swaps and history saved in this browser.")) return;
+      const confirmed = await showConfirm(
+        "Reset everything to the default starting schedule? This clears participants, swaps and history saved in this browser.",
+        { confirmLabel: "Reset" }
+      );
+      if (!confirmed) return;
       localStorage.removeItem(STORAGE_KEY);
       state = await loadState();
       swapSelection = null;
