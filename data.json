@@ -39,8 +39,13 @@
     },
     {
       "id": "keyan",
-      "name": "Keyan",
+      "name": "",
       "color": "#f59e0b"
+    },
+    {
+      "id": "nii",
+      "name": "Nii",
+      "color": "#00572e"
     }
   ],
   "weeks": [
@@ -56,7 +61,7 @@
       "id": "w_2026-08-20",
       "date": "2026-08-20",
       "opening": "tafara",
-      "closing": "keyan",
+      "closing": "nii",
       "openingSwapped": false,
       "closingSwapped": false
     },
@@ -95,7 +100,7 @@
     {
       "id": "w_2026-09-24",
       "date": "2026-09-24",
-      "opening": "keyan",
+      "opening": "nii",
       "closing": "tony",
       "openingSwapped": false,
       "closingSwapped": true
@@ -119,25 +124,15 @@
   ],
   "bag": {
     "opening": [
-      "tafara",
-      "malcolm",
-      "jaeden",
-      "tina",
-      "wayne",
-      "tony",
-      "emmitt"
+      "p_mss4wggy8ag0",
+      "p_mss4y17ryk7r"
     ],
     "closing": [
-      "jaeden",
-      "tony",
-      "wayne",
-      "tafara",
-      "emmitt",
-      "malcolm",
-      "tina"
+      "p_mss4y17ryk7r",
+      "p_mss4wggy8ag0"
     ],
-    "lastOpening": "keyan",
-    "lastClosing": "keyan"
+    "lastOpening": "malcolm",
+    "lastClosing": "jaeden"
   },
   "changelog": [
     {
