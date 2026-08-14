@@ -46,6 +46,11 @@
       "id": "nii",
       "name": "Nii",
       "color": "#00572e"
+    },
+    {
+      "id": "p_mst61x5a4ehj",
+      "name": "mark",
+      "color": "#2563eb"
     }
   ],
   "weeks": [
@@ -125,10 +130,12 @@
   "bag": {
     "opening": [
       "p_mss4wggy8ag0",
-      "p_mss4y17ryk7r"
+      "p_mss4y17ryk7r",
+      "p_mst61x5a4ehj"
     ],
     "closing": [
       "p_mss4y17ryk7r",
+      "p_mst61x5a4ehj",
       "p_mss4wggy8ag0"
     ],
     "lastOpening": "malcolm",
