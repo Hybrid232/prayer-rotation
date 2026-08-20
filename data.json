@@ -60,9 +60,9 @@
     {
       "id": "w_2026-08-20",
       "date": "2026-08-20",
-      "opening": "tafara",
+      "opening": "wayne",
       "closing": "nii",
-      "openingSwapped": false,
+      "openingSwapped": true,
       "closingSwapped": false
     },
     {
@@ -76,9 +76,9 @@
     {
       "id": "w_2026-09-03",
       "date": "2026-09-03",
-      "opening": "wayne",
+      "opening": "tafara",
       "closing": "malcolm",
-      "openingSwapped": false,
+      "openingSwapped": true,
       "closingSwapped": false
     },
     {
@@ -133,6 +133,10 @@
     "lastClosing": "jaeden"
   },
   "changelog": [
+    {
+      "ts": 1787250418398,
+      "text": "Swapped Tafara (opening, 8/20/2026) with Wayne (opening, 9/3/2026)."
+    },
     {
       "ts": 1786663041863,
       "text": "Swapped Tony (opening, 10/1/2026) with Tina (closing, 9/24/2026)."
